@@ -10,26 +10,44 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 import gspread
 from google.oauth2.service_account import Credentials
+import json
 
 # Your NEW bot token for metaincome_bot
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-import json
-import os
 
 # Google Sheets Setup - Render compatible
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
 
+def get_google_credentials():
+    """Google Sheets credentials load করার function"""
+    try:
+        # Render-এ environment variable থেকে credentials load করা
+        creds_json = os.getenv('GOOGLE_CREDENTIALS')
+        if creds_json:
+            creds_dict = json.loads(creds_json)
+            return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        
+        # Local development-এর জন্য file থেকে load করা
+        creds_file = os.path.join(os.path.dirname(__file__), 'credentials.json')
+        if os.path.exists(creds_file):
+            return Credentials.from_service_account_file(creds_file, scopes=SCOPES)
+        
+        print("❌ Google credentials not found")
+        return None
+    except Exception as e:
+        print(f"❌ Error loading credentials: {e}")
+        return None
+
 def init_google_sheets():
     try:
         credentials = get_google_credentials()
-        if not creds:
+        if not credentials:
             print("❌ No Google credentials found")
             return None
         
         print("✅ Authorizing client...")
-        client = gspread.authorize(creds)
+        client = gspread.authorize(credentials)
         
         print("✅ Opening spreadsheet...")
         spreadsheet = client.open_by_key(SPREADSHEET_ID)
@@ -38,22 +56,7 @@ def init_google_sheets():
         return spreadsheet
         
     except Exception as e:
-        print(f"❌ Full Google Sheets error: {repr(e)}")  # repr(e) ব্যবহার করুন
-        return None
-
-# Google Sheets Initialize
-def init_google_sheets():
-    try:
-        credentials = get_google_credentials()
-        if not creds:
-            print("❌ No Google credentials found")
-            return None
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_key(SPREADSHEET_ID)
-        print("✅ Google Sheets Connected!")
-        return spreadsheet
-    except Exception as e:
-        print(f"❌ Google Sheets error: {e}")
+        print(f"❌ Full Google Sheets error: {repr(e)}")
         return None
 
 spreadsheet = init_google_sheets()
@@ -1872,6 +1875,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
