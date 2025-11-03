@@ -8,9 +8,16 @@ import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Your NEW bot token for metaincome_bot
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+# Google Sheets Setup
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SERVICE_ACCOUNT_FILE = 'service-account.json'
+SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -1751,3 +1758,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
