@@ -19,6 +19,20 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SERVICE_ACCOUNT_FILE = 'service-account.json'
 SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
 
+# Google Sheets Initialize
+def init_google_sheets():
+    try:
+        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+        print("✅ Google Sheets Connected!")
+        return spreadsheet
+    except Exception as e:
+        print(f"❌ Google Sheets error: {e}")
+        return None
+
+spreadsheet = init_google_sheets()
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 
@@ -1758,4 +1772,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
