@@ -1,3 +1,4 @@
+import os
 import logging
 import sqlite3
 import random
@@ -1748,4 +1749,5 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
+
     main()
