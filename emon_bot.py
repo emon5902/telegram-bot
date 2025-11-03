@@ -21,20 +21,24 @@ import os
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
 
-def get_google_credentials():
+def init_google_sheets():
     try:
-        # Render environment variable থেকে JSON load করব
-        creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
-        print(f"✅ Credentials JSON found: {bool(creds_json)}")  # Debug line
-        
-        if creds_json:
-            creds_dict = json.loads(creds_json)
-            return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        else:
-            print("❌ No credentials JSON in environment")
+        creds = get_google_credentials()
+        if not creds:
+            print("❌ No Google credentials found")
             return None
+        
+        print("✅ Authorizing client...")
+        client = gspread.authorize(creds)
+        
+        print("✅ Opening spreadsheet...")
+        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+        
+        print("✅ Google Sheets Connected!")
+        return spreadsheet
+        
     except Exception as e:
-        print(f"❌ Credentials error: {e}")
+        print(f"❌ Full Google Sheets error: {repr(e)}")  # repr(e) ব্যবহার করুন
         return None
 
 # Google Sheets Initialize
@@ -1868,6 +1872,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
