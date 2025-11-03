@@ -478,6 +478,8 @@ async def handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE
             VALUES (?, ?, ?, ?, datetime("now"), 1, 1)
         ''', (user_id, phone_number, new_referral_code, referred_by))
         
+        save_user_to_sheets(user_id, phone_number, 0, 0, new_referral_code)
+        
         conn.commit()
         conn.close()
         
@@ -1811,6 +1813,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
