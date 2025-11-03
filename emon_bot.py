@@ -1812,9 +1812,42 @@ def main():
     print("🎁 রেফারেল রিচার্জে 20% ইন্সট্যান্ট বোনাস")
     application.run_polling()
 
+# Google Sheets শীট তৈরি করার ফাংশন
+def create_sheets_if_not_exists():
+    if not spreadsheet:
+        return
+    
+    try:
+        # Users শীট তৈরি করুন
+        try:
+            spreadsheet.worksheet('Users')
+        except:
+            users_sheet = spreadsheet.add_worksheet(title='Users', rows=1000, cols=10)
+            users_sheet.update('A1:F1', [['User ID', 'Phone', 'Balance', 'Bonus Balance', 'Referral Code', 'Joined Date']])
+            print("✅ Users sheet created")
+        
+        # Transactions শীট তৈরি করুন
+        try:
+            spreadsheet.worksheet('Transactions')
+        except:
+            transactions_sheet = spreadsheet.add_worksheet(title='Transactions', rows=1000, cols=10)
+            transactions_sheet.update('A1:F1', [['User ID', 'Amount', 'Type', 'Status', 'Transaction ID', 'Created Date']])
+            print("✅ Transactions sheet created")
+            
+    except Exception as e:
+        print(f"❌ Sheets creation error: {e}")
+
+# Main function এ যোগ করুন
+def main():
+    init_database()
+    create_sheets_if_not_exists()  # এই লাইন যোগ করুন
+    start_bonus_thread()
+    # ... আপনার বাকি কোড
+
 if __name__ == "__main__":
 
     main()
+
 
 
 
