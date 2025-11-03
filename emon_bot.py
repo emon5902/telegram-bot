@@ -23,7 +23,7 @@ SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
 
 def init_google_sheets():
     try:
-        creds = get_google_credentials()
+        credentials = get_google_credentials()
         if not creds:
             print("❌ No Google credentials found")
             return None
@@ -1872,6 +1872,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
