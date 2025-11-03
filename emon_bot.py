@@ -985,6 +985,8 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
             INSERT INTO transactions (user_id, amount, type, status, transaction_id, payment_method, created_date)
             VALUES (?, ?, 'deposit', 'pending', ?, ?, datetime("now"))
         ''', (user_id, amount, transaction_id, payment_method))
+
+        save_transaction_to_sheets(user_id, amount, 'deposit', 'pending', transaction_id)
         
         if referred_by:
             cursor.execute('''
@@ -1813,6 +1815,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
