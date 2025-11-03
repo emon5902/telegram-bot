@@ -24,13 +24,15 @@ SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
 def get_google_credentials():
     try:
         # Render environment variable থেকে JSON load করব
-        creds_json = os.getenv('GOOGLE_CREDENTS_JSON')
+        creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
+        print(f"✅ Credentials JSON found: {bool(creds_json)}")  # Debug line
+        
         if creds_json:
             creds_dict = json.loads(creds_json)
             return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         else:
-            # Local development এর জন্য file থেকে
-            return Credentials.from_service_account_file('service-account.json', scopes=SCOPES)
+            print("❌ No credentials JSON in environment")
+            return None
     except Exception as e:
         print(f"❌ Credentials error: {e}")
         return None
@@ -1866,6 +1868,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
