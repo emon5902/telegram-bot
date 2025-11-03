@@ -140,6 +140,45 @@ def init_database():
     conn.close()
     print("✅ ডাটাবেস তৈরি করা হয়েছে")
 
+# ==================== GOOGLE SHEETS FUNCTIONS ====================
+def save_user_to_sheets(user_id, phone, balance=0, bonus_balance=0, referral_code=""):
+    if not spreadsheet:
+        return
+    
+    try:
+        try:
+            sheet = spreadsheet.worksheet('Users')
+        except:
+            sheet = spreadsheet.add_worksheet(title='Users', rows=1000, cols=10)
+            sheet.update('A1:F1', [['User ID', 'Phone', 'Balance', 'Bonus Balance', 'Referral Code', 'Joined Date']])
+        
+        sheet.append_row([
+            user_id, phone, balance, bonus_balance, 
+            referral_code, datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ])
+        print(f"✅ User {user_id} Google Sheets এ সেভ হয়েছে")
+    except Exception as e:
+        print(f"❌ User save error: {e}")
+
+def save_transaction_to_sheets(user_id, amount, transaction_type, status, txn_id=""):
+    if not spreadsheet:
+        return
+    
+    try:
+        try:
+            sheet = spreadsheet.worksheet('Transactions')
+        except:
+            sheet = spreadsheet.add_worksheet(title='Transactions', rows=1000, cols=10)
+            sheet.update('A1:F1', [['User ID', 'Amount', 'Type', 'Status', 'Transaction ID', 'Created Date']])
+        
+        sheet.append_row([
+            user_id, amount, transaction_type, status, 
+            txn_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ])
+        print(f"✅ Transaction {txn_id} Google Sheets এ সেভ হয়েছে")
+    except Exception as e:
+        print(f"❌ Transaction save error: {e}")
+
 # Generate unique random referral code
 def generate_referral_code():
     characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -1772,5 +1811,6 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
