@@ -14,15 +14,34 @@ from google.oauth2.service_account import Credentials
 # Your NEW bot token for metaincome_bot
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Google Sheets Setup
+import json
+import os
+
+# Google Sheets Setup - Render compatible
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-SERVICE_ACCOUNT_FILE = 'service-account.json'
 SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
+
+def get_google_credentials():
+    try:
+        # Render environment variable থেকে JSON load করব
+        creds_json = os.getenv('GOOGLE_CREDENTS_JSON')
+        if creds_json:
+            creds_dict = json.loads(creds_json)
+            return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        else:
+            # Local development এর জন্য file থেকে
+            return Credentials.from_service_account_file('service-account.json', scopes=SCOPES)
+    except Exception as e:
+        print(f"❌ Credentials error: {e}")
+        return None
 
 # Google Sheets Initialize
 def init_google_sheets():
     try:
-        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        creds = get_google_credentials()
+        if not creds:
+            print("❌ No Google credentials found")
+            return None
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_key(SPREADSHEET_ID)
         print("✅ Google Sheets Connected!")
@@ -1847,6 +1866,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
