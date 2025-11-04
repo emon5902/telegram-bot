@@ -8,67 +8,30 @@ import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
-import gspread
-from google.oauth2.service_account import Credentials
-import json
 
 # Your NEW bot token for metaincome_bot
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Google Sheets Setup - Render compatible
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+# Google Sheets Disabled - Using SQLite only
 SPREADSHEET_ID = '1oxsE0yybZf_IIOoqs9V_7nTwSGzidIpYE_M8QvKZdls'
 
-import base64  # উপরে import এর অংশে এই লাইনটা যোগ করো
-
 def get_google_credentials():
-    """Google Sheets credentials load করার function"""
-    try:
-        # Render-এ environment variable থেকে credentials load করা
-        creds_json = os.getenv('GOOGLE_CREDENTIALS')
-        if creds_json:
-            # যদি Base64 encoded হয়ে থাকে, তাহলে decode করো
-            try:
-                decoded = base64.b64decode(creds_json).decode('utf-8')
-                creds_dict = json.loads(decoded)
-            except Exception:
-                # যদি Base64 না হয়, তাহলে সরাসরি JSON ধরো
-                creds_dict = json.loads(creds_json)
-            
-            return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        
-        # Local development-এর জন্য file থেকে load করা
-        creds_file = os.path.join(os.path.dirname(__file__), 'credentials.json')
-        if os.path.exists(creds_file):
-            return Credentials.from_service_account_file(creds_file, scopes=SCOPES)
-        
-        print("❌ Google credentials not found")
-        return None
-    except Exception as e:
-        print(f"❌ Error loading credentials: {e}")
-        return None
+    print("✅ Google Sheets disabled - Using SQLite only")
+    return None
 
 def init_google_sheets():
-    try:
-        credentials = get_google_credentials()
-        if not credentials:
-            print("❌ No Google credentials found")
-            return None
-        
-        print("✅ Authorizing client...")
-        client = gspread.authorize(credentials)
-        
-        print("✅ Opening spreadsheet...")
-        spreadsheet = client.open_by_key(SPREADSHEET_ID)
-        
-        print("✅ Google Sheets Connected!")
-        return spreadsheet
-        
-    except Exception as e:
-        print(f"❌ Full Google Sheets error: {repr(e)}")
-        return None
+    print("✅ Google Sheets disabled - Using SQLite only")
+    return None
 
-spreadsheet = init_google_sheets()
+spreadsheet = None
+
+def save_user_to_sheets(user_id, phone, balance=0, bonus_balance=0, referral_code=""):
+    print(f"📊 User {user_id} saved to SQLite (Sheets disabled)")
+    return True
+
+def save_transaction_to_sheets(user_id, amount, transaction_type, status, txn_id=""):
+    print(f"💰 Transaction {txn_id} saved to SQLite (Sheets disabled)")
+    return True
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -176,45 +139,6 @@ def init_database():
     conn.commit()
     conn.close()
     print("✅ ডাটাবেস তৈরি করা হয়েছে")
-
-# ==================== GOOGLE SHEETS FUNCTIONS ====================
-def save_user_to_sheets(user_id, phone, balance=0, bonus_balance=0, referral_code=""):
-    if not spreadsheet:
-        return
-    
-    try:
-        try:
-            sheet = spreadsheet.worksheet('Users')
-        except:
-            sheet = spreadsheet.add_worksheet(title='Users', rows=1000, cols=10)
-            sheet.update('A1:F1', [['User ID', 'Phone', 'Balance', 'Bonus Balance', 'Referral Code', 'Joined Date']])
-        
-        sheet.append_row([
-            user_id, phone, balance, bonus_balance, 
-            referral_code, datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        ])
-        print(f"✅ User {user_id} Google Sheets এ সেভ হয়েছে")
-    except Exception as e:
-        print(f"❌ User save error: {e}")
-
-def save_transaction_to_sheets(user_id, amount, transaction_type, status, txn_id=""):
-    if not spreadsheet:
-        return
-    
-    try:
-        try:
-            sheet = spreadsheet.worksheet('Transactions')
-        except:
-            sheet = spreadsheet.add_worksheet(title='Transactions', rows=1000, cols=10)
-            sheet.update('A1:F1', [['User ID', 'Amount', 'Type', 'Status', 'Transaction ID', 'Created Date']])
-        
-        sheet.append_row([
-            user_id, amount, transaction_type, status, 
-            txn_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        ])
-        print(f"✅ Transaction {txn_id} Google Sheets এ সেভ হয়েছে")
-    except Exception as e:
-        print(f"❌ Transaction save error: {e}")
 
 # Generate unique random referral code
 def generate_referral_code():
@@ -1849,53 +1773,5 @@ def main():
     print("🎁 রেফারেল রিচার্জে 20% ইন্সট্যান্ট বোনাস")
     application.run_polling()
 
-# Google Sheets শীট তৈরি করার ফাংশন
-def create_sheets_if_not_exists():
-    if not spreadsheet:
-        return
-    
-    try:
-        # Users শীট তৈরি করুন
-        try:
-            spreadsheet.worksheet('Users')
-        except:
-            users_sheet = spreadsheet.add_worksheet(title='Users', rows=1000, cols=10)
-            users_sheet.update('A1:F1', [['User ID', 'Phone', 'Balance', 'Bonus Balance', 'Referral Code', 'Joined Date']])
-            print("✅ Users sheet created")
-        
-        # Transactions শীট তৈরি করুন
-        try:
-            spreadsheet.worksheet('Transactions')
-        except:
-            transactions_sheet = spreadsheet.add_worksheet(title='Transactions', rows=1000, cols=10)
-            transactions_sheet.update('A1:F1', [['User ID', 'Amount', 'Type', 'Status', 'Transaction ID', 'Created Date']])
-            print("✅ Transactions sheet created")
-            
-    except Exception as e:
-        print(f"❌ Sheets creation error: {e}")
-
-# Main function এ যোগ করুন
-def main():
-    init_database()
-    create_sheets_if_not_exists()  # এই লাইন যোগ করুন
-    start_bonus_thread()
-    # ... আপনার বাকি কোড
-
 if __name__ == "__main__":
-
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
