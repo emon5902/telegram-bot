@@ -17,7 +17,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # Google Sheets Setup - Render compatible
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-SPREADSHEET_ID = '1TyMdpPyAS6sMc9kZPAs9stC_uwZ-SqrkHALdc46aX78'
+SPREADSHEET_ID = '1oxsE0yybZf_IIOoqs9V_7nTwSGzidIpYE_M8QvKZdls'
 
 def get_google_credentials():
     """Google Sheets credentials load করার function"""
@@ -1875,6 +1875,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
