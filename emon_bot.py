@@ -7,7 +7,10 @@ import time
 import os
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram.ext import (
+    Updater, CommandHandler, MessageHandler, Filters, 
+    ConversationHandler, CallbackQueryHandler
+)
 
 # Your NEW bot token from environment variable
 TOKEN = os.environ.get("BOT_TOKEN")
@@ -1734,4 +1737,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
