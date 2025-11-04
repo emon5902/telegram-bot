@@ -1674,15 +1674,18 @@ def main():
     # Start bonus thread
     start_bonus_thread()
     
-    # Create application
-    application = Application.builder().token(TOKEN).build()
+    # Create updater with your bot token
+    updater = Updater(TOKEN, use_context=True)
+    
+    # Get the dispatcher to register handlers
+    dp = updater.dispatcher
     
     # Conversation handlers
     user_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
-            VERIFICATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_verification)]
+            PHONE: [MessageHandler(Filters.text & ~Filters.command, handle_phone)],
+            VERIFICATION: [MessageHandler(Filters.text & ~Filters.command, handle_verification)]
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
@@ -1690,53 +1693,45 @@ def main():
     admin_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('admin', admin)],
         states={
-            ADMIN_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_login)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    )
-    
-    # withdraw conversation handler
-    withdraw_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handle_payment_method, pattern="^method_")],
-        states={
-            WITHDRAW_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_account)]
+            ADMIN_LOGIN: [MessageHandler(Filters.text & ~Filters.command, handle_admin_login)]
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
     
     # Add handlers
-    application.add_handler(user_conv_handler)
-    application.add_handler(admin_conv_handler)
-    application.add_handler(withdraw_conv_handler)
+    dp.add_handler(user_conv_handler)
+    dp.add_handler(admin_conv_handler)
     
     # Command handlers
-    application.add_handler(CommandHandler("recharge", recharge))
-    application.add_handler(CommandHandler("balance", balance))
-    application.add_handler(CommandHandler("referral", referral))
-    application.add_handler(CommandHandler("withdraw", withdraw))
-    
-    application.add_handler(CommandHandler("pending", pending))
-    application.add_handler(CommandHandler("withdrawals", withdrawals))
-    application.add_handler(CommandHandler("transactions", transactions))
-    application.add_handler(CommandHandler("stats", stats))
-    application.add_handler(CommandHandler("users", users))
+    dp.add_handler(CommandHandler("recharge", recharge))
+    dp.add_handler(CommandHandler("balance", balance))
+    dp.add_handler(CommandHandler("referral", referral))
+    dp.add_handler(CommandHandler("withdraw", withdraw))
+    dp.add_handler(CommandHandler("pending", pending))
+    dp.add_handler(CommandHandler("withdrawals", withdrawals))
+    dp.add_handler(CommandHandler("transactions", transactions))
+    dp.add_handler(CommandHandler("stats", stats))
+    dp.add_handler(CommandHandler("users", users))
     
     # Callback handlers
-    application.add_handler(CallbackQueryHandler(handle_amount_selection, pattern="^amount_"))
-    application.add_handler(CallbackQueryHandler(handle_recharge_payment_method, pattern="^recharge_(bkash|nagad)_"))
-    application.add_handler(CallbackQueryHandler(handle_withdraw_selection, pattern="^withdraw_"))
-    application.add_handler(CallbackQueryHandler(handle_admin_buttons, pattern="^(approve_|reject_|pay_|cancel_)"))
+    dp.add_handler(CallbackQueryHandler(handle_amount_selection, pattern="^amount_"))
+    dp.add_handler(CallbackQueryHandler(handle_recharge_payment_method, pattern="^recharge_"))
+    dp.add_handler(CallbackQueryHandler(handle_withdraw_selection, pattern="^withdraw_"))
+    dp.add_handler(CallbackQueryHandler(handle_admin_buttons, pattern="^(approve_|reject_|pay_|cancel_)"))
     
-    # Transaction ID handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
+    # Message handlers
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_transaction_id))
     
-    print("🤖 META Income Bot শুরু হয়েছে...")
-    print("🔗 প্রতিটি ইউজারের জন্য র‍্যান্ডম রেফারেল লিংক তৈরি হবে")
-    print("🎁 রেফারেল রিচার্জে 20% ইন্সট্যান্ট বোনাস")
-    print("💾 SQLite ডাটাবেস সেটআপ সম্পূর্ণ")
+    # Start the Bot
+    updater.start_polling()
+    
+    # Run the bot until you press Ctrl-C
+    logging.info("🤖 Bot started successfully!")
+    updater.idle()
     
     # Start the bot
     application.run_polling()
 
 if __name__ == "__main__":
     main()
+
