@@ -19,13 +19,22 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SPREADSHEET_ID = '1oxsE0yybZf_IIOoqs9V_7nTwSGzidIpYE_M8QvKZdls'
 
+import base64  # উপরে import এর অংশে এই লাইনটা যোগ করো
+
 def get_google_credentials():
     """Google Sheets credentials load করার function"""
     try:
         # Render-এ environment variable থেকে credentials load করা
         creds_json = os.getenv('GOOGLE_CREDENTIALS')
         if creds_json:
-            creds_dict = json.loads(creds_json)
+            # যদি Base64 encoded হয়ে থাকে, তাহলে decode করো
+            try:
+                decoded = base64.b64decode(creds_json).decode('utf-8')
+                creds_dict = json.loads(decoded)
+            except Exception:
+                # যদি Base64 না হয়, তাহলে সরাসরি JSON ধরো
+                creds_dict = json.loads(creds_json)
+            
             return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         
         # Local development-এর জন্য file থেকে load করা
@@ -1875,6 +1884,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
