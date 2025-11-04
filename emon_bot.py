@@ -1670,7 +1670,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ বাতিল করা হয়েছে।")
     return ConversationHandler.END
 
-# Main function
+# ✅ Main function (PTB v20.7 Compatible)
 def main():
     # Initialize database
     init_database()
@@ -1678,66 +1678,52 @@ def main():
     # Start bonus thread
     start_bonus_thread()
     
-    # Create updater with your bot token
-    updater = Updater(TOKEN, use_context=True)
-    
-    # Get the dispatcher to register handlers
-    dp = updater.dispatcher
-    
+    # Create application instead of Updater
+    app = ApplicationBuilder().token(TOKEN).build()
+
     # Conversation handlers
     user_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            PHONE: [MessageHandler(Filters.text & ~Filters.command, handle_phone)],
-            VERIFICATION: [MessageHandler(Filters.text & ~Filters.command, handle_verification)]
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
+            VERIFICATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_verification)],
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
-    
+
     admin_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('admin', admin)],
         states={
-            ADMIN_LOGIN: [MessageHandler(Filters.text & ~Filters.command, handle_admin_login)]
+            ADMIN_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_login)],
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
-    
-    # Add handlers
-    dp.add_handler(user_conv_handler)
-    dp.add_handler(admin_conv_handler)
-    
+
     # Command handlers
-    dp.add_handler(CommandHandler("recharge", recharge))
-    dp.add_handler(CommandHandler("balance", balance))
-    dp.add_handler(CommandHandler("referral", referral))
-    dp.add_handler(CommandHandler("withdraw", withdraw))
-    dp.add_handler(CommandHandler("pending", pending))
-    dp.add_handler(CommandHandler("withdrawals", withdrawals))
-    dp.add_handler(CommandHandler("transactions", transactions))
-    dp.add_handler(CommandHandler("stats", stats))
-    dp.add_handler(CommandHandler("users", users))
-    
+    app.add_handler(user_conv_handler)
+    app.add_handler(admin_conv_handler)
+    app.add_handler(CommandHandler("recharge", recharge))
+    app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("referral", referral))
+    app.add_handler(CommandHandler("withdraw", withdraw))
+    app.add_handler(CommandHandler("pending", pending))
+    app.add_handler(CommandHandler("withdrawals", withdrawals))
+    app.add_handler(CommandHandler("transactions", transactions))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("users", users))
+
     # Callback handlers
-    dp.add_handler(CallbackQueryHandler(handle_amount_selection, pattern="^amount_"))
-    dp.add_handler(CallbackQueryHandler(handle_recharge_payment_method, pattern="^recharge_"))
-    dp.add_handler(CallbackQueryHandler(handle_withdraw_selection, pattern="^withdraw_"))
-    dp.add_handler(CallbackQueryHandler(handle_admin_buttons, pattern="^(approve_|reject_|pay_|cancel_)"))
-    
-    # Message handlers
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_transaction_id))
-    
-    # Start the Bot
-    updater.start_polling()
-    
-    # Run the bot until you press Ctrl-C
+    app.add_handler(CallbackQueryHandler(handle_amount_selection, pattern="^amount_"))
+    app.add_handler(CallbackQueryHandler(handle_recharge_payment_method, pattern="^recharge_"))
+    app.add_handler(CallbackQueryHandler(handle_withdraw_selection, pattern="^withdraw_"))
+    app.add_handler(CallbackQueryHandler(handle_admin_buttons, pattern="^(approve_|reject_|pay_|cancel_)"))
+
+    # Message handler for transaction IDs
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
+
     logging.info("🤖 Bot started successfully!")
-    updater.idle()
-    
-    # Start the bot
-    application.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
-
-
 
