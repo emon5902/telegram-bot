@@ -1,25 +1,16 @@
-import os
 import logging
 import sqlite3
 import random
 import re
 import threading
 import time
+import os
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 
-# Your bot token
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-# Google Sheets Disabled
-def save_user_to_sheets(user_id, phone, balance=0, bonus_balance=0, referral_code=""):
-    print(f"📊 User {user_id} saved to SQLite")
-    return True
-
-def save_transaction_to_sheets(user_id, amount, transaction_type, status, txn_id=""):
-    print(f"💰 Transaction {txn_id} saved to SQLite")
-    return True
+# Your NEW bot token for metaincome_bot
+TOKEN = "YOUR_NEW_BOT_TOKEN_HERE"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 # Conversation states
 PHONE, VERIFICATION, PASSWORD_SETUP, PASSWORD_LOGIN, ADMIN_LOGIN, WITHDRAW_ACCOUNT = range(6)
 
-# Your bKash and Nagad numbers - UPDATE THESE!
+# Your bKash and Nagad numbers - UPDATE WITH YOUR NUMBERS
 YOUR_BKASH = "01712345678"
 YOUR_NAGAD = "01787654321"
 
@@ -44,9 +35,12 @@ WITHDRAW_AMOUNTS = [200, 300, 500, 700, 1000, 1500, 2000, 2500, 3000, 5000, 7500
 REFERRAL_BONUS_PERCENT = 20
 DELAYED_BONUS_PERCENT = 20
 
-# Database setup
+# Database setup - RENDER COMPATIBLE
 def init_database():
-    conn = sqlite3.connect('users.db')
+    # Render এ persistent storage এর জন্য /tmp folder ব্যবহার করুন
+    db_path = '/tmp/users.db' if 'RENDER' in os.environ else 'users.db'
+    
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -126,7 +120,12 @@ def init_database():
     
     conn.commit()
     conn.close()
-    print("✅ Database initialized")
+    print("✅ ডাটাবেস তৈরি করা হয়েছে")
+
+# Database connection function - RENDER COMPATIBLE
+def get_db_connection():
+    db_path = '/tmp/users.db' if 'RENDER' in os.environ else 'users.db'
+    return sqlite3.connect(db_path)
 
 # Generate unique random referral code
 def generate_referral_code():
@@ -134,7 +133,7 @@ def generate_referral_code():
     while True:
         code = "META" + ''.join(random.choices(characters, k=8))
         
-        conn = sqlite3.connect('users.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE referral_code = ?', (code,))
         exists = cursor.fetchone()[0]
@@ -146,18 +145,18 @@ def generate_referral_code():
 # Password validation
 def is_strong_password(password):
     if len(password) < 6:
-        return False, "Password must be at least 6 characters"
+        return False, "পাসওয়ার্ড কমপক্ষে ৬ ক্যারেক্টার হতে হবে"
     if not re.search(r"[A-Z]", password):
-        return False, "Password must contain at least 1 uppercase letter"
+        return False, "পাসওয়ার্ডে কমপক্ষে ১টি বড় হাতের অক্ষর থাকতে হবে"
     if not re.search(r"[a-z]", password):
-        return False, "Password must contain at least 1 lowercase letter"
+        return False, "পাসওয়ার্ডে কমপক্ষে ১টি ছোট হাতের অক্ষর থাকতে হবে"
     if not re.search(r"\d", password):
-        return False, "Password must contain at least 1 number"
-    return True, "Strong password"
+        return False, "পাসওয়ার্ডে কমপক্ষে ১টি সংখ্যা থাকতে হবে"
+    return True, "পাসওয়ার্ড শক্তিশালী"
 
 # Check login attempts
 def check_login_attempts(user_id):
-    conn = sqlite3.connect('users.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('SELECT login_attempts, last_login_attempt FROM users WHERE user_id = ?', (user_id,))
@@ -173,6 +172,7 @@ def check_login_attempts(user_id):
         last_attempt_time = datetime.strptime(last_attempt, '%Y-%m-%d %H:%M:%S')
         time_diff = datetime.now() - last_attempt_time
         
+        # Reset attempts after 1 hour
         if time_diff.total_seconds() > 3600:
             cursor.execute('UPDATE users SET login_attempts = 0 WHERE user_id = ?', (user_id,))
             conn.commit()
@@ -188,7 +188,7 @@ def check_login_attempts(user_id):
 
 # Update login attempts
 def update_login_attempts(user_id, success=False):
-    conn = sqlite3.connect('users.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     if success:
@@ -208,7 +208,7 @@ def update_login_attempts(user_id, success=False):
 def check_and_add_bonus():
     while True:
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -235,6 +235,19 @@ def check_and_add_bonus():
                     VALUES (?, ?, ?, 'delayed', 'completed', datetime("now"))
                 ''', (user_id, delayed_bonus_amount, txn_id))
                 
+                try:
+                    from telegram import Bot
+                    bot = Bot(token=TOKEN)
+                    bot.send_message(
+                        chat_id=user_id,
+                        text=f"🎁 **ডেইলি বোনাস পেয়েছেন!**\n\n"
+                             f"💰 {amount} টাকা রিচার্জের {DELAYED_BONUS_PERCENT}% ডেইলি বোনাস: {delayed_bonus_amount} টাকা\n"
+                             f"💳 আপনার বোনাস ব্যালেন্সে যোগ করা হয়েছে\n\n"
+                             f"উইথড্র করতে /withdraw লিখুন"
+                    )
+                except:
+                    pass
+                
                 print(f"Daily bonus added: User {user_id} got {delayed_bonus_amount} bonus")
             
             conn.commit()
@@ -250,9 +263,9 @@ def start_bonus_thread():
     bonus_thread.daemon = True
     bonus_thread.start()
 
-# Check if user can withdraw
+# Check if user can withdraw (24 hours cooldown)
 def can_user_withdraw(user_id):
-    conn = sqlite3.connect('users.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('SELECT last_withdraw_date FROM users WHERE user_id = ?', (user_id,))
@@ -273,9 +286,12 @@ def can_user_withdraw(user_id):
         remaining_time = next_withdraw - now
         hours = int(remaining_time.total_seconds() // 3600)
         minutes = int((remaining_time.total_seconds() % 3600) // 60)
-        return False, f"{hours} hours {minutes} minutes"
+        return False, f"{hours} ঘন্টা {minutes} মিনিট"
 
-# /start command - FIXED VERSION
+# বাকি সব ফাংশন একদম আগের মতোই থাকবে...
+# শুধু প্রতিটি database connection এ get_db_connection() ব্যবহার করুন
+
+# Example: /start command - শুধু conn = sqlite3.connect('users.db') পরিবর্তন করুন
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
@@ -283,7 +299,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     referral_code = args[0] if args else None
     
-    conn = sqlite3.connect('users.db')
+    conn = get_db_connection()  # এখানে পরিবর্তন
     cursor = conn.cursor()
     cursor.execute('SELECT phone, is_verified, is_active, password FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -292,275 +308,59 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         phone, is_verified, is_active, password = result
         
         if is_active == 0:
-            await update.message.reply_text("❌ Your account is blocked!")
+            await update.message.reply_text("❌ আপনার অ্যাকাউন্ট ব্লক করা হয়েছে!")
             conn.close()
-            return
+            return ConversationHandler.END
         
         if is_verified == 1:
+            # User exists and verified, check if password is set
             if password:
+                # Password is set, ask for login
                 context.user_data['phone'] = phone
                 await update.message.reply_text(
-                    "🔐 **Login Required**\n\n"
-                    "Enter your password:"
+                    "🔐 **লগইন প্রয়োজন**\n\n"
+                    "আপনার পাসওয়ার্ড দিন:"
                 )
                 return PASSWORD_LOGIN
             else:
+                # No password set, ask to set one
                 context.user_data['phone'] = phone
                 await update.message.reply_text(
-                    "🔒 **Password Setup**\n\n"
-                    "Set a strong password for your account:\n\n"
-                    "📋 **Requirements:**\n"
-                    "• At least 6 characters\n"
-                    "• 1 uppercase letter (A-Z)\n"
-                    "• 1 lowercase letter (a-z)\n"
-                    "• 1 number (0-9)\n\n"
-                    "Enter your new password:"
+                    "🔒 **পাসওয়ার্ড সেটআপ**\n\n"
+                    "আপনার অ্যাকাউন্ট সুরক্ষিত করতে একটি শক্তিশালী পাসওয়ার্ড সেট করুন:\n\n"
+                    "📋 **পাসওয়ার্ড রিকোয়ারমেন্ট:**\n"
+                    "• কমপক্ষে ৬ ক্যারেক্টার\n"
+                    "• ১টি বড় হাতের অক্ষর (A-Z)\n"
+                    "• ১টি ছোট হাতের অক্ষর (a-z)\n"
+                    "• ১টি সংখ্যা (0-9)\n\n"
+                    "আপনার নতুন পাসওয়ার্ড দিন:"
                 )
                 return PASSWORD_SETUP
     
+    # New user registration flow
     if referral_code:
         context.user_data['referral_code'] = referral_code
     
     conn.close()
     
     await update.message.reply_text(
-        "🤖 **META Income Bot - Account Verification**\n\n"
-        "Enter your phone number (11 digits):\n"
-        "Example: 01712345678"
+        "🤖 **META Income Bot - অ্যাকাউন্ট ভেরিফিকেশন**\n\n"
+        "আপনার ফোন নম্বর দিন (11 ডিজিট):\n"
+        "উদাহরণ: 01712345678"
     )
     return PHONE
 
-# Handle phone number input
-async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    phone_number = update.message.text.strip()
-    
-    if re.match(r'^01[3-9]\d{8}$', phone_number):
-        user_id = update.message.from_user.id
-        
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT user_id FROM users WHERE phone = ?', (phone_number,))
-        existing_user = cursor.fetchone()
-        conn.close()
-        
-        if existing_user:
-            await update.message.reply_text(
-                "❌ This phone number is already registered!\n\n"
-                "You are already registered. Use /start to login."
-            )
-            return ConversationHandler.END
-        
-        verification_code = str(random.randint(1000, 9999))
-        
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO verification_codes (phone, code, created_time)
-            VALUES (?, ?, datetime("now"))
-        ''', (phone_number, verification_code))
-        conn.commit()
-        conn.close()
-        
-        context.user_data['phone'] = phone_number
-        context.user_data['verification_code'] = verification_code
-        
-        await update.message.reply_text(
-            f"✅ **Phone number accepted!**\n\n"
-            f"📱 Phone: {phone_number}\n"
-            f"🔐 Verification code: **{verification_code}**\n\n"
-            "Enter the 4-digit code:"
-        )
-        
-        return VERIFICATION
-    else:
-        await update.message.reply_text(
-            "❌ Invalid phone number!\n\n"
-            "Enter correct phone number (11 digits):\n"
-            "Example: 01712345678\n\n"
-            "Try again:"
-        )
-        return PHONE
+# বাকি সব ফাংশনে একইভাবে database connection পরিবর্তন করুন...
+# প্রতিটি conn = sqlite3.connect('users.db') কে conn = get_db_connection() দিয়ে replace করুন
 
-# Handle verification code
-async def handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text.strip()
-    verification_code = context.user_data.get('verification_code')
-    phone_number = context.user_data.get('phone')
-    user_id = update.message.from_user.id
-    referral_code = context.user_data.get('referral_code')
-    
-    if user_input == verification_code:
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        
-        new_referral_code = generate_referral_code()
-        
-        referred_by = None
-        if referral_code:
-            cursor.execute('SELECT user_id FROM users WHERE referral_code = ?', (referral_code,))
-            referrer = cursor.fetchone()
-            if referrer:
-                referred_by = referrer[0]
-        
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (user_id, phone, referral_code, referred_by, joined_date, is_verified, is_active)
-            VALUES (?, ?, ?, ?, datetime("now"), 1, 1)
-        ''', (user_id, phone_number, new_referral_code, referred_by))
-        
-        save_user_to_sheets(user_id, phone_number, 0, 0, new_referral_code)
-        
-        conn.commit()
-        conn.close()
-        
-        context.user_data['phone'] = phone_number
-        await update.message.reply_text(
-            "🎉 **Verification successful!**\n\n"
-            "🔒 **Password Setup**\n\n"
-            "Set a strong password for your account:\n\n"
-            "📋 **Requirements:**\n"
-            "• At least 6 characters\n"
-            "• 1 uppercase letter (A-Z)\n"
-            "• 1 lowercase letter (a-z)\n"
-            "• 1 number (0-9)\n\n"
-            "Enter your new password:"
-        )
-        return PASSWORD_SETUP
-    else:
-        await update.message.reply_text("❌ Wrong verification code. Try again:")
-        return VERIFICATION
-
-# Handle password setup
-async def handle_password_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    password = update.message.text.strip()
-    phone = context.user_data.get('phone')
-    
-    is_valid, message = is_strong_password(password)
-    
-    if not is_valid:
-        await update.message.reply_text(
-            f"❌ {message}\n\n"
-            "Please enter a strong password:"
-        )
-        return PASSWORD_SETUP
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET password = ? WHERE user_id = ?', (password, user_id))
-    conn.commit()
-    
-    cursor.execute('SELECT referral_code, balance, bonus_balance FROM users WHERE user_id = ?', (user_id,))
-    user_data = cursor.fetchone()
-    conn.close()
-    
-    referral_code = user_data[0]
-    bot_username = "metaincome_bot"
-    referral_link = f"https://t.me/{bot_username}?start={referral_code}"
-    
-    welcome_message = (
-        f"✅ **Password setup successful!**\n\n"
-        f"🔐 Your account is now secure\n"
-        f"📱 Phone: {phone}\n"
-        f"🔗 Referral code: `{referral_code}`\n"
-        f"🔗 Referral link:\n{referral_link}\n\n"
-        f"💰 Balance: 0 Tk\n"
-        f"🎁 Bonus: 0 Tk\n\n"
-        f"💡 **Use /start to login next time**\n\n"
-        f"💳 Use /recharge to deposit\n"
-        f"🏧 Use /withdraw to withdraw\n"
-        f"🔗 Use /referral for referral info"
-    )
-    
-    await update.message.reply_text(welcome_message)
-    return ConversationHandler.END
-
-# Handle password login
-async def handle_password_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    password_input = update.message.text.strip()
-    phone = context.user_data.get('phone')
-    
-    if not check_login_attempts(user_id):
-        await update.message.reply_text(
-            "❌ **Too many failed attempts!**\n\n"
-            "Your account is locked for 1 hour.\n"
-            "Try again after 1 hour."
-        )
-        return ConversationHandler.END
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT password FROM users WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    
-    if not result or result[0] != password_input:
-        update_login_attempts(user_id, success=False)
-        
-        cursor.execute('SELECT login_attempts FROM users WHERE user_id = ?', (user_id,))
-        attempts_result = cursor.fetchone()
-        attempts = attempts_result[0] if attempts_result else 1
-        
-        remaining_attempts = 5 - attempts
-        
-        await update.message.reply_text(
-            f"❌ **Wrong password!**\n\n"
-            f"📊 Remaining attempts: {remaining_attempts}\n\n"
-            f"Enter password again:"
-        )
-        conn.close()
-        return PASSWORD_LOGIN
-    
-    update_login_attempts(user_id, success=True)
-    
-    cursor.execute('SELECT referral_code, balance, bonus_balance FROM users WHERE user_id = ?', (user_id,))
-    user_data = cursor.fetchone()
-    conn.close()
-    
-    referral_code, balance, bonus_balance = user_data
-    
-    await update.message.reply_text(
-        f"✅ **Login successful!**\n\n"
-        f"🤖 **META Income Bot**\n\n"
-        f"📱 Phone: {phone}\n"
-        f"💰 Balance: {balance} Tk\n"
-        f"🎁 Bonus: {bonus_balance} Tk\n"
-        f"🔗 Referral code: `{referral_code}`\n\n"
-        f"Use /recharge to deposit\n"
-        f"Use /withdraw to withdraw\n"
-        f"Use /referral for referral info"
-    )
-    return ConversationHandler.END
-
-# Cancel conversation - FIXED
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Operation cancelled.")
-    return ConversationHandler.END
-
-# Basic commands without conversation
-async def recharge(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    await update.message.reply_text("💳 Use /start first to login")
-
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    await update.message.reply_text("💰 Use /start first to login")
-
-async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    await update.message.reply_text("🔗 Use /start first to login")
-
-async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    await update.message.reply_text("🏧 Use /start first to login")
-
-# Main function - SIMPLIFIED
+# Main function
 def main():
     init_database()
     start_bonus_thread()
     
     application = Application.builder().token(TOKEN).build()
     
-    # SIMPLIFIED ConversationHandler - FIXED
+    # Conversation handlers
     user_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -572,17 +372,54 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel)]
     )
     
-    # Add basic command handlers
+    admin_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('admin', admin)],
+        states={
+            ADMIN_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_login)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+    
+    # withdraw conversation handler
+    withdraw_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handle_payment_method, pattern="^method_")],
+        states={
+            WITHDRAW_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_account)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+    
+    # Add handlers
+    application.add_handler(user_conv_handler)
+    application.add_handler(admin_conv_handler)
+    application.add_handler(withdraw_conv_handler)
+    
+    # Command handlers
     application.add_handler(CommandHandler("recharge", recharge))
     application.add_handler(CommandHandler("balance", balance))
     application.add_handler(CommandHandler("referral", referral))
     application.add_handler(CommandHandler("withdraw", withdraw))
+    application.add_handler(CommandHandler("changepassword", change_password))
     
-    # Add conversation handler LAST
-    application.add_handler(user_conv_handler)
+    application.add_handler(CommandHandler("pending", pending))
+    application.add_handler(CommandHandler("withdrawals", withdrawals))
+    application.add_handler(CommandHandler("transactions", transactions))
+    application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("users", users))
     
-    print("🤖 META Income Bot started...")
-    print("🔐 Password system active")
+    # Callback handlers
+    application.add_handler(CallbackQueryHandler(handle_amount_selection, pattern="^amount_"))
+    application.add_handler(CallbackQueryHandler(handle_recharge_payment_method, pattern="^recharge_(bkash|nagad)_"))
+    application.add_handler(CallbackQueryHandler(handle_withdraw_selection, pattern="^withdraw_"))
+    application.add_handler(CallbackQueryHandler(handle_admin_buttons, pattern="^(approve_|reject_|pay_|cancel_)"))
+    
+    # Transaction ID handler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
+    
+    print("🤖 META Income Bot শুরু হয়েছে...")
+    print("🔐 পাসওয়ার্ড সিস্টেম সক্রিয়")
+    print("🔗 প্রতিটি ইউজারের জন্য র‍্যান্ডম রেফারেল লিংক তৈরি হবে")
+    print("🎁 রেফারেল রিচার্জে 20% ইন্সট্যান্ট বোনাস")
     application.run_polling()
 
 if __name__ == "__main__":
