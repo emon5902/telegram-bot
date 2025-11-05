@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+import os
 
 # Get bot token from environment variable
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
