@@ -6,7 +6,10 @@ import threading
 import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, filters, 
+    ContextTypes, ConversationHandler, CallbackQueryHandler
+)
 import os
 
 # Get bot token from environment variable
@@ -17,12 +20,16 @@ if not TOKEN:
     exit(1)
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Conversation states
 PHONE, VERIFICATION, PASSWORD_SETUP, PASSWORD_LOGIN, ADMIN_LOGIN, WITHDRAW_ACCOUNT = range(6)
 
-# Your bKash and Nagad numbers - UPDATE WITH YOUR NUMBERS
+# Your bKash and Nagad numbers
 YOUR_BKASH = "01331732308"
 YOUR_NAGAD = "01331732308"
 
@@ -41,7 +48,7 @@ DELAYED_BONUS_PERCENT = 20
 
 # Database setup
 def init_database():
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -129,7 +136,7 @@ def generate_referral_code():
     while True:
         code = "META" + ''.join(random.choices(characters, k=8))
         
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect('users.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE referral_code = ?', (code,))
         exists = cursor.fetchone()[0]
@@ -152,7 +159,7 @@ def is_strong_password(password):
 
 # Check login attempts
 def check_login_attempts(user_id):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT login_attempts, last_login_attempt FROM users WHERE user_id = ?', (user_id,))
@@ -165,15 +172,18 @@ def check_login_attempts(user_id):
     attempts, last_attempt = result
     
     if last_attempt:
-        last_attempt_time = datetime.strptime(last_attempt, '%Y-%m-%d %H:%M:%S')
-        time_diff = datetime.now() - last_attempt_time
-        
-        # Reset attempts after 1 hour
-        if time_diff.total_seconds() > 3600:
-            cursor.execute('UPDATE users SET login_attempts = 0 WHERE user_id = ?', (user_id,))
-            conn.commit()
-            conn.close()
-            return True
+        try:
+            last_attempt_time = datetime.strptime(last_attempt, '%Y-%m-%d %H:%M:%S')
+            time_diff = datetime.now() - last_attempt_time
+            
+            # Reset attempts after 1 hour
+            if time_diff.total_seconds() > 3600:
+                cursor.execute('UPDATE users SET login_attempts = 0 WHERE user_id = ?', (user_id,))
+                conn.commit()
+                conn.close()
+                return True
+        except:
+            pass
     
     if attempts >= 5:
         conn.close()
@@ -184,7 +194,7 @@ def check_login_attempts(user_id):
 
 # Update login attempts
 def update_login_attempts(user_id, success=False):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     if success:
@@ -204,7 +214,7 @@ def update_login_attempts(user_id, success=False):
 def check_and_add_bonus():
     while True:
         try:
-            conn = sqlite3.connect('users.db')
+            conn = sqlite3.connect('users.db', check_same_thread=False)
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -231,19 +241,6 @@ def check_and_add_bonus():
                     VALUES (?, ?, ?, 'delayed', 'completed', datetime("now"))
                 ''', (user_id, delayed_bonus_amount, txn_id))
                 
-                try:
-                    from telegram import Bot
-                    bot = Bot(token=TOKEN)
-                    bot.send_message(
-                        chat_id=user_id,
-                        text=f"🎁 **ডেইলি বোনাস পেয়েছেন!**\n\n"
-                             f"💰 {amount} টাকা রিচার্জের {DELAYED_BONUS_PERCENT}% ডেইলি বোনাস: {delayed_bonus_amount} টাকা\n"
-                             f"💳 আপনার বোনাস ব্যালেন্সে যোগ করা হয়েছে\n\n"
-                             f"উইথড্র করতে /withdraw লিখুন"
-                    )
-                except:
-                    pass
-                
                 print(f"Daily bonus added: User {user_id} got {delayed_bonus_amount} bonus")
             
             conn.commit()
@@ -261,7 +258,7 @@ def start_bonus_thread():
 
 # Check if user can withdraw (24 hours cooldown)
 def can_user_withdraw(user_id):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT last_withdraw_date FROM users WHERE user_id = ?', (user_id,))
@@ -271,20 +268,23 @@ def can_user_withdraw(user_id):
     if not result or not result[0]:
         return True, None
     
-    last_withdraw = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
-    now = datetime.now()
-    time_diff = now - last_withdraw
-    
-    if time_diff.total_seconds() >= 24 * 3600:
+    try:
+        last_withdraw = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+        now = datetime.now()
+        time_diff = now - last_withdraw
+        
+        if time_diff.total_seconds() >= 24 * 3600:
+            return True, None
+        else:
+            next_withdraw = last_withdraw + timedelta(hours=24)
+            remaining_time = next_withdraw - now
+            hours = int(remaining_time.total_seconds() // 3600)
+            minutes = int((remaining_time.total_seconds() % 3600) // 60)
+            return False, f"{hours} ঘন্টা {minutes} মিনিট"
+    except:
         return True, None
-    else:
-        next_withdraw = last_withdraw + timedelta(hours=24)
-        remaining_time = next_withdraw - now
-        hours = int(remaining_time.total_seconds() // 3600)
-        minutes = int((remaining_time.total_seconds() % 3600) // 60)
-        return False, f"{hours} ঘন্টা {minutes} মিনিট"
 
-# /start command - UPDATED WITH PASSWORD SYSTEM
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
@@ -292,7 +292,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     referral_code = args[0] if args else None
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT phone, is_verified, is_active, password FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -306,17 +306,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
         
         if is_verified == 1:
-            # User exists and verified, check if password is set
             if password:
-                # Password is set, ask for login
                 context.user_data['phone'] = phone
-                await update.message.reply_text(
-                    "🔐 **লগইন প্রয়োজন**\n\n"
-                    "আপনার পাসওয়ার্ড দিন:"
-                )
+                await update.message.reply_text("🔐 **লগইন প্রয়োজন**\n\nআপনার পাসওয়ার্ড দিন:")
                 return PASSWORD_LOGIN
             else:
-                # No password set, ask to set one
                 context.user_data['phone'] = phone
                 await update.message.reply_text(
                     "🔒 **পাসওয়ার্ড সেটআপ**\n\n"
@@ -330,7 +324,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return PASSWORD_SETUP
     
-    # New user registration flow
     if referral_code:
         context.user_data['referral_code'] = referral_code
     
@@ -350,28 +343,22 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if re.match(r'^01[3-9]\d{8}$', phone_number):
         user_id = update.message.from_user.id
         
-        # Check if phone already exists
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect('users.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute('SELECT user_id FROM users WHERE phone = ?', (phone_number,))
         existing_user = cursor.fetchone()
         conn.close()
         
         if existing_user:
-            await update.message.reply_text(
-                "❌ এই ফোন নম্বর ইতিমধ্যে রেজিস্টার্ড!\n\n"
-                "আপনি ইতিমধ্যে রেজিস্টার্ড ইউজার। /start লিখে লগইন করুন।"
-            )
+            await update.message.reply_text("❌ এই ফোন নম্বর ইতিমধ্যে রেজিস্টার্ড!\n\nআপনি ইতিমধ্যে রেজিস্টার্ড ইউজার। /start লিখে লগইন করুন।")
             return ConversationHandler.END
         
         verification_code = str(random.randint(1000, 9999))
         
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect('users.db', check_same_thread=False)
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO verification_codes (phone, code, created_time)
-            VALUES (?, ?, datetime("now"))
-        ''', (phone_number, verification_code))
+        cursor.execute('INSERT OR REPLACE INTO verification_codes (phone, code, created_time) VALUES (?, ?, datetime("now"))', 
+                      (phone_number, verification_code))
         conn.commit()
         conn.close()
         
@@ -387,12 +374,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         return VERIFICATION
     else:
-        await update.message.reply_text(
-            "❌ ভুল ফোন নম্বর!\n\n"
-            "সঠিক ফোন নম্বর দিন (11 ডিজিট):\n"
-            "উদাহরণ: 01712345678\n\n"
-            "আবার চেষ্টা করুন:"
-        )
+        await update.message.reply_text("❌ ভুল ফোন নম্বর!\n\nসঠিক ফোন নম্বর দিন (11 ডিজিট):\nউদাহরণ: 01712345678\n\nআবার চেষ্টা করুন:")
         return PHONE
 
 # Handle verification code
@@ -404,10 +386,9 @@ async def handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE
     referral_code = context.user_data.get('referral_code')
     
     if user_input == verification_code:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect('users.db', check_same_thread=False)
         cursor = conn.cursor()
         
-        # Generate unique random referral code
         new_referral_code = generate_referral_code()
         
         referred_by = None
@@ -417,15 +398,12 @@ async def handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE
             if referrer:
                 referred_by = referrer[0]
         
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (user_id, phone, referral_code, referred_by, joined_date, is_verified, is_active)
-            VALUES (?, ?, ?, ?, datetime("now"), 1, 1)
-        ''', (user_id, phone_number, new_referral_code, referred_by))
+        cursor.execute('INSERT OR REPLACE INTO users (user_id, phone, referral_code, referred_by, joined_date, is_verified, is_active) VALUES (?, ?, ?, ?, datetime("now"), 1, 1)', 
+                      (user_id, phone_number, new_referral_code, referred_by))
         
         conn.commit()
         conn.close()
         
-        # Ask for password setup
         context.user_data['phone'] = phone_number
         await update.message.reply_text(
             "🎉 **ভেরিফিকেশন সফল!**\n\n"
@@ -449,23 +427,17 @@ async def handle_password_setup(update: Update, context: ContextTypes.DEFAULT_TY
     password = update.message.text.strip()
     phone = context.user_data.get('phone')
     
-    # Validate password strength
     is_valid, message = is_strong_password(password)
     
     if not is_valid:
-        await update.message.reply_text(
-            f"❌ {message}\n\n"
-            "দয়া করে শক্তিশালী পাসওয়ার্ড দিন:"
-        )
+        await update.message.reply_text(f"❌ {message}\n\nদয়া করে শক্তিশালী পাসওয়ার্ড দিন:")
         return PASSWORD_SETUP
     
-    # Save password to database
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET password = ? WHERE user_id = ?', (password, user_id))
     conn.commit()
     
-    # Get user data for welcome message
     cursor.execute('SELECT referral_code, balance, bonus_balance FROM users WHERE user_id = ?', (user_id,))
     user_data = cursor.fetchone()
     conn.close()
@@ -497,17 +469,11 @@ async def handle_password_login(update: Update, context: ContextTypes.DEFAULT_TY
     password_input = update.message.text.strip()
     phone = context.user_data.get('phone')
     
-    # Check login attempts
     if not check_login_attempts(user_id):
-        await update.message.reply_text(
-            "❌ **অনেকবার ভুল পাসওয়ার্ড দেওয়ার尝试!**\n\n"
-            "আপনার অ্যাকাউন্ট ১ ঘন্টার জন্য লক করা হয়েছে।\n"
-            "১ ঘন্টা পর আবার চেষ্টা করুন।"
-        )
+        await update.message.reply_text("❌ **অনেকবার ভুল পাসওয়ার্ড দেওয়ার尝试!**\n\nআপনার অ্যাকাউন্ট ১ ঘন্টার জন্য লক করা হয়েছে।\n১ ঘন্টা পর আবার চেষ্টা করুন।")
         return ConversationHandler.END
     
-    # Verify password
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT password FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -521,15 +487,10 @@ async def handle_password_login(update: Update, context: ContextTypes.DEFAULT_TY
         
         remaining_attempts = 5 - attempts
         
-        await update.message.reply_text(
-            f"❌ **ভুল পাসওয়ার্ড!**\n\n"
-            f"📊 অবশিষ্ট চেষ্টা: {remaining_attempts} বার\n\n"
-            f"আবার পাসওয়ার্ড দিন:"
-        )
+        await update.message.reply_text(f"❌ **ভুল পাসওয়ার্ড!**\n\n📊 অবশিষ্ট চেষ্টা: {remaining_attempts} বার\n\nআবার পাসওয়ার্ড দিন:")
         conn.close()
         return PASSWORD_LOGIN
     
-    # Successful login
     update_login_attempts(user_id, success=True)
     
     cursor.execute('SELECT referral_code, balance, bonus_balance FROM users WHERE user_id = ?', (user_id,))
@@ -555,7 +516,7 @@ async def handle_password_login(update: Update, context: ContextTypes.DEFAULT_TY
 async def change_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT phone, password FROM users WHERE user_id = ? AND is_verified = 1', (user_id,))
     result = cursor.fetchone()
@@ -574,13 +535,10 @@ async def change_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['changing_password'] = True
     context.user_data['phone'] = phone
     
-    await update.message.reply_text(
-        "🔐 **পাসওয়ার্ড পরিবর্তন**\n\n"
-        "প্রথমে আপনার বর্তমান পাসওয়ার্ড দিন:"
-    )
+    await update.message.reply_text("🔐 **পাসওয়ার্ড পরিবর্তন**\n\nপ্রথমে আপনার বর্তমান পাসওয়ার্ড দিন:")
     return PASSWORD_LOGIN
 
-# Handle password change after verification - FIXED VERSION
+# Handle password change after verification
 async def handle_password_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     password_input = update.message.text.strip()
@@ -588,21 +546,16 @@ async def handle_password_change(update: Update, context: ContextTypes.DEFAULT_T
     if not context.user_data.get('changing_password'):
         return await handle_password_login(update, context)
     
-    # Verify current password
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT password FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
     
     if not result or result[0] != password_input:
-        await update.message.reply_text(
-            "❌ **ভুল পাসওয়ার্ড!**\n\n"
-            "আবার চেষ্টা করুন:"
-        )
+        await update.message.reply_text("❌ **ভুল পাসওয়ার্ড!**\n\nআবার চেষ্টা করুন:")
         conn.close()
         return PASSWORD_LOGIN
     
-    # Current password verified, now ask for new password
     context.user_data['current_password_verified'] = True
     conn.close()
     
@@ -617,11 +570,11 @@ async def handle_password_change(update: Update, context: ContextTypes.DEFAULT_T
     )
     return PASSWORD_SETUP
 
-# Referral command - UPDATED WITH PASSWORD CHECK
+# Referral command
 async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT referral_code, phone, password FROM users WHERE user_id = ? AND is_verified = 1', (user_id,))
     result = cursor.fetchone()
@@ -637,7 +590,7 @@ async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ প্রথমে /start লিখে পাসওয়ার্ড সেটআপ সম্পন্ন করুন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user_id,))
     total_referrals = cursor.fetchone()[0]
@@ -670,11 +623,11 @@ async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(message)
 
-# Recharge command - UPDATED WITH PASSWORD CHECK
+# Recharge command
 async def recharge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT is_verified, is_active, password FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -696,17 +649,13 @@ async def recharge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
-        "🤖 **META Income - রিচার্জ সিস্টেম**\n\n"
-        "রিচার্জের জন্য নিচের বাটন থেকে অ্যামাউন্ট সিলেক্ট করুন:",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("🤖 **META Income - রিচার্জ সিস্টেম**\n\nরিচার্জের জন্য নিচের বাটন থেকে অ্যামাউন্ট সিলেক্ট করুন:", reply_markup=reply_markup)
 
-# Balance command - UPDATED WITH PASSWORD CHECK
+# Balance command
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT balance, bonus_balance, password FROM users WHERE user_id = ? AND is_verified = 1', (user_id,))
     result = cursor.fetchone()
@@ -740,11 +689,11 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(message)
 
-# Withdraw command - UPDATED WITH PASSWORD CHECK
+# Withdraw command
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT is_verified, is_active, password FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -760,18 +709,12 @@ async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ প্রথমে /start লিখে পাসওয়ার্ড সেটআপ সম্পন্ন করুন")
         return
     
-    # Check if user can withdraw
     can_withdraw, remaining_time = can_user_withdraw(user_id)
     if not can_withdraw:
-        await update.message.reply_text(
-            f"⏳ **উইথড্র কুলডাউন**\n\n"
-            f"আপনি ইতিমধ্যে আজ উইথড্র করেছেন!\n"
-            f"⏰ আবার উইথড্র করতে পারবেন: {remaining_time} পর\n\n"
-            f"💡 প্রতি 24 ঘন্টায় 1 বার উইথড্র করতে পারবেন"
-        )
+        await update.message.reply_text(f"⏳ **উইথড্র কুলডাউন**\n\nআপনি ইতিমধ্যে আজ উইথড্র করেছেন!\n⏰ আবার উইথড্র করতে পারবেন: {remaining_time} পর\n\n💡 প্রতি 24 ঘন্টায় 1 বার উইথড্র করতে পারবেন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT bonus_balance FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -784,12 +727,7 @@ async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bonus_balance = result[0]
     
     if bonus_balance < min(WITHDRAW_AMOUNTS):
-        await update.message.reply_text(
-            f"❌ পর্যাপ্ত বোনাস নেই!\n\n"
-            f"🎁 আপনার বোনাস: {bonus_balance} টাকা\n"
-            f"💰 সর্বনিম্ন উইথড্র: {min(WITHDRAW_AMOUNTS)} টাকা\n\n"
-            f"রিচার্জ করে বোনাস সংগ্রহ করুন!"
-        )
+        await update.message.reply_text(f"❌ পর্যাপ্ত বোনাস নেই!\n\n🎁 আপনার বোনাস: {bonus_balance} টাকা\n💰 সর্বনিম্ন উইথড্র: {min(WITHDRAW_AMOUNTS)} টাকা\n\nরিচার্জ করে বোনাস সংগ্রহ করুন!")
         return
     
     keyboard = []
@@ -825,18 +763,13 @@ async def handle_amount_selection(update: Update, context: ContextTypes.DEFAULT_
         
         context.user_data['selected_amount'] = amount
         
-        # Show payment method selection
         keyboard = [
             [InlineKeyboardButton("📱 বিকাশ", callback_data=f"recharge_bkash_{amount}")],
             [InlineKeyboardButton("📱 নগদ", callback_data=f"recharge_nagad_{amount}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            f"💰 **রিচার্জ অ্যামাউন্ট: {amount} টাকা**\n\n"
-            f"পেমেন্ট মেথড সিলেক্ট করুন:",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text(f"💰 **রিচার্জ অ্যামাউন্ট: {amount} টাকা**\n\nপেমেন্ট মেথড সিলেক্ট করুন:", reply_markup=reply_markup)
 
 # Handle payment method selection for recharge
 async def handle_recharge_payment_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -848,7 +781,7 @@ async def handle_recharge_payment_method(update: Update, context: ContextTypes.D
     
     if data.startswith('recharge_bkash_') or data.startswith('recharge_nagad_'):
         parts = data.split('_')
-        payment_method = parts[1]  # bkash or nagad
+        payment_method = parts[1]
         amount = int(parts[2])
         
         context.user_data['selected_amount'] = amount
@@ -886,7 +819,7 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
     if not context.user_data.get('waiting_for_txn'):
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT is_verified, is_active FROM users WHERE user_id = ?', (user_id,))
     result = cursor.fetchone()
@@ -909,13 +842,7 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
         payment_method = context.user_data.get('payment_method')
         
         if amount != selected_amount:
-            await update.message.reply_text(
-                f"❌ অ্যামাউন্ট মিলেনি!\n\n"
-                f"আপনি সিলেক্ট করেছিলেন: {selected_amount} টাকা\n"
-                f"আপনি দিয়েছেন: {amount} টাকা\n\n"
-                f"সঠিক অ্যামাউন্ট দিয়ে আবার চেষ্টা করুন।\n"
-                f"রিচার্জ করতে /recharge লিখুন"
-            )
+            await update.message.reply_text(f"❌ অ্যামাউন্ট মিলেনি!\n\nআপনি সিলেক্ট করেছিলেন: {selected_amount} টাকা\nআপনি দিয়েছেন: {amount} টাকা\n\nসঠিক অ্যামাউন্ট দিয়ে আবার চেষ্টা করুন।\nরিচার্জ করতে /recharge লিখুন")
             conn.close()
             return
         
@@ -923,17 +850,12 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
         referrer_result = cursor.fetchone()
         referred_by = referrer_result[0] if referrer_result else None
         
-        # Save transaction with payment method
-        cursor.execute('''
-            INSERT INTO transactions (user_id, amount, type, status, transaction_id, payment_method, created_date)
-            VALUES (?, ?, 'deposit', 'pending', ?, ?, datetime("now"))
-        ''', (user_id, amount, transaction_id, payment_method))
+        cursor.execute('INSERT INTO transactions (user_id, amount, type, status, transaction_id, payment_method, created_date) VALUES (?, ?, "deposit", "pending", ?, ?, datetime("now"))', 
+                      (user_id, amount, transaction_id, payment_method))
         
         if referred_by:
-            cursor.execute('''
-                INSERT OR REPLACE INTO referrals (referrer_id, referee_id, created_date)
-                VALUES (?, ?, datetime("now"))
-            ''', (referred_by, user_id))
+            cursor.execute('INSERT OR REPLACE INTO referrals (referrer_id, referee_id, created_date) VALUES (?, ?, datetime("now"))', 
+                          (referred_by, user_id))
         
         conn.commit()
         conn.close()
@@ -982,20 +904,15 @@ async def handle_withdraw_selection(update: Update, context: ContextTypes.DEFAUL
     data = query.data
     user_id = query.from_user.id
     
-    # Check if user can withdraw
     can_withdraw, remaining_time = can_user_withdraw(user_id)
     if not can_withdraw:
-        await query.edit_message_text(
-            f"⏳ **উইথড্র কুলডাউন**\n\n"
-            f"আপনি ইতিমধ্যে আজ উইথড্র করেছেন!\n"
-            f"⏰ আবার উইথড্র করতে পারবেন: {remaining_time} পর"
-        )
+        await query.edit_message_text(f"⏳ **উইথড্র কুলডাউন**\n\nআপনি ইতিমধ্যে আজ উইথড্র করেছেন!\n⏰ আবার উইথড্র করতে পারবেন: {remaining_time} পর")
         return
     
     if data.startswith('withdraw_'):
         amount = int(data.split('_')[1])
         
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect('users.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute('SELECT bonus_balance FROM users WHERE user_id = ?', (user_id,))
         result = cursor.fetchone()
@@ -1007,21 +924,15 @@ async def handle_withdraw_selection(update: Update, context: ContextTypes.DEFAUL
         
         conn.close()
         
-        # Save amount to context
         context.user_data['withdraw_amount'] = amount
         
-        # Ask for payment method
         keyboard = [
             [InlineKeyboardButton("📱 বিকাশ", callback_data="method_bkash")],
             [InlineKeyboardButton("📱 নগদ", callback_data="method_nagad")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            f"💰 **উইথড্র অ্যামাউন্ট: {amount} টাকা**\n\n"
-            f"পেমেন্ট মেথড সিলেক্ট করুন:",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text(f"💰 **উইথড্র অ্যামাউন্ট: {amount} টাকা**\n\nপেমেন্ট মেথড সিলেক্ট করুন:", reply_markup=reply_markup)
 
 # Handle payment method selection for withdraw
 async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1046,7 +957,6 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
             f"উদাহরণ: 01712345678"
         )
         
-        # Set flag to indicate we're waiting for account number
         context.user_data['waiting_for_account'] = True
         return WITHDRAW_ACCOUNT
 
@@ -1057,27 +967,20 @@ async def handle_withdraw_account(update: Update, context: ContextTypes.DEFAULT_
     withdraw_amount = context.user_data.get('withdraw_amount')
     payment_method = context.user_data.get('payment_method')
     
-    # Check if we're actually waiting for account number
     if not context.user_data.get('waiting_for_account'):
         return ConversationHandler.END
     
-    # Check if user can withdraw
     can_withdraw, remaining_time = can_user_withdraw(user_id)
     if not can_withdraw:
-        await update.message.reply_text(
-            f"⏳ **উইথড্র কুলডাউন**\n\n"
-            f"আপনি ইতিমধ্যে আজ উইথড্র করেছেন!\n"
-            f"⏰ আবার উইথড্র করতে পারবেন: {remaining_time} পর"
-        )
+        await update.message.reply_text(f"⏳ **উইথড্র কুলডাউন**\n\nআপনি ইতিমধ্যে আজ উইথড্র করেছেন!\n⏰ আবার উইথড্র করতে পারবেন: {remaining_time} পর")
         context.user_data['waiting_for_account'] = False
         return ConversationHandler.END
     
     if re.match(r'^01[3-9]\d{8}$', account_number) and withdraw_amount and payment_method:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect('users.db', check_same_thread=False)
         cursor = conn.cursor()
         
         try:
-            # Check balance again
             cursor.execute('SELECT bonus_balance FROM users WHERE user_id = ?', (user_id,))
             result = cursor.fetchone()
             
@@ -1086,19 +989,14 @@ async def handle_withdraw_account(update: Update, context: ContextTypes.DEFAULT_
                 context.user_data['waiting_for_account'] = False
                 return ConversationHandler.END
             
-            # Update user's account number
             if payment_method == "bkash":
                 cursor.execute('UPDATE users SET bkash_number = ? WHERE user_id = ?', (account_number, user_id))
             else:
                 cursor.execute('UPDATE users SET nagad_number = ? WHERE user_id = ?', (account_number, user_id))
             
-            # Save withdraw request
-            cursor.execute('''
-                INSERT INTO withdrawals (user_id, amount, payment_method, account_number, status, created_date)
-                VALUES (?, ?, ?, ?, 'pending', datetime("now"))
-            ''', (user_id, withdraw_amount, payment_method, account_number))
+            cursor.execute('INSERT INTO withdrawals (user_id, amount, payment_method, account_number, status, created_date) VALUES (?, ?, ?, ?, "pending", datetime("now"))', 
+                          (user_id, withdraw_amount, payment_method, account_number))
             
-            # Update last withdraw date
             cursor.execute('UPDATE users SET last_withdraw_date = datetime("now") WHERE user_id = ?', (user_id,))
             
             conn.commit()
@@ -1116,24 +1014,18 @@ async def handle_withdraw_account(update: Update, context: ContextTypes.DEFAULT_
                 f"⏰ পরবর্তী উইথড্র: আগামীকাল"
             )
             
-            # Clear the waiting flag
             context.user_data['waiting_for_account'] = False
             return ConversationHandler.END
             
         except Exception as e:
-            logging.error(f"Withdraw error: {e}")
+            logger.error(f"Withdraw error: {e}")
             await update.message.reply_text("❌ সিস্টেম এরর! আবার চেষ্টা করুন")
             context.user_data['waiting_for_account'] = False
             return ConversationHandler.END
         finally:
             conn.close()
     else:
-        await update.message.reply_text(
-            "❌ ভুল অ্যাকাউন্ট নম্বর!\n\n"
-            "সঠিক অ্যাকাউন্ট নম্বর দিন (11 ডিজিট):\n"
-            "উদাহরণ: 01712345678\n\n"
-            "আবার চেষ্টা করুন:"
-        )
+        await update.message.reply_text("❌ ভুল অ্যাকাউন্ট নম্বর!\n\nসঠিক অ্যাকাউন্ট নম্বর দিন (11 ডিজিট):\nউদাহরণ: 01712345678\n\nআবার চেষ্টা করুন:")
         return WITHDRAW_ACCOUNT
 
 # Admin login
@@ -1170,14 +1062,9 @@ async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ অ্যাডমিন এক্সেস প্রয়োজন! /admin লিখুন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT t.id, u.phone, t.amount, t.payment_method, t.transaction_id, t.created_date
-        FROM transactions t 
-        JOIN users u ON t.user_id = u.user_id 
-        WHERE t.status = 'pending'
-    ''')
+    cursor.execute('SELECT t.id, u.phone, t.amount, t.payment_method, t.transaction_id, t.created_date FROM transactions t JOIN users u ON t.user_id = u.user_id WHERE t.status = "pending"')
     pending_requests = cursor.fetchall()
     conn.close()
     
@@ -1217,14 +1104,9 @@ async def withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ অ্যাডমিন এক্সেস প্রয়োজন! /admin লিখুন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT w.id, u.phone, w.amount, w.payment_method, w.account_number, w.created_date
-        FROM withdrawals w 
-        JOIN users u ON w.user_id = u.user_id 
-        WHERE w.status = 'pending'
-    ''')
+    cursor.execute('SELECT w.id, u.phone, w.amount, w.payment_method, w.account_number, w.created_date FROM withdrawals w JOIN users u ON w.user_id = u.user_id WHERE w.status = "pending"')
     pending_withdrawals = cursor.fetchall()
     conn.close()
     
@@ -1264,18 +1146,13 @@ async def transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ অ্যাডমিন এক্সেস প্রয়োজন! /admin লিখুন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT COUNT(*) FROM users WHERE is_verified = 1')
     total_users = cursor.fetchone()[0]
     
-    cursor.execute('''
-        SELECT t.id, u.phone, t.amount, t.type, t.status, t.payment_method, t.transaction_id, t.created_date
-        FROM transactions t 
-        JOIN users u ON t.user_id = u.user_id 
-        ORDER BY t.id DESC LIMIT 50
-    ''')
+    cursor.execute('SELECT t.id, u.phone, t.amount, t.type, t.status, t.payment_method, t.transaction_id, t.created_date FROM transactions t JOIN users u ON t.user_id = u.user_id ORDER BY t.id DESC LIMIT 50')
     all_transactions = cursor.fetchall()
     conn.close()
     
@@ -1315,7 +1192,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ অ্যাডমিন এক্সেস প্রয়োজন! /admin লিখুন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT COUNT(*) FROM users WHERE is_verified = 1')
@@ -1361,7 +1238,7 @@ async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ অ্যাডমিন এক্সেস প্রয়োজন! /admin লিখুন")
         return
     
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT user_id, phone, balance, bonus_balance, joined_date, is_active FROM users WHERE is_verified = 1')
     all_users = cursor.fetchall()
@@ -1414,15 +1291,10 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # Approve recharge
 async def approve_recharge(query, context, req_id):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    cursor.execute('''
-        SELECT t.user_id, t.amount, u.referred_by, t.payment_method
-        FROM transactions t 
-        JOIN users u ON t.user_id = u.user_id 
-        WHERE t.id = ? AND t.status = "pending"
-    ''', (req_id,))
+    cursor.execute('SELECT t.user_id, t.amount, u.referred_by, t.payment_method FROM transactions t JOIN users u ON t.user_id = u.user_id WHERE t.id = ? AND t.status = "pending"', (req_id,))
     transaction = cursor.fetchone()
     
     if not transaction:
@@ -1437,23 +1309,17 @@ async def approve_recharge(query, context, req_id):
     cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
     
     user_instant_bonus = (amount * REFERRAL_BONUS_PERCENT) / 100
-    cursor.execute('UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?', 
-                 (user_instant_bonus, user_id))
+    cursor.execute('UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?', (user_instant_bonus, user_id))
     
     if referred_by:
-        cursor.execute('SELECT instant_bonus_paid FROM referrals WHERE referrer_id = ? AND referee_id = ?', 
-                     (referred_by, user_id))
+        cursor.execute('SELECT instant_bonus_paid FROM referrals WHERE referrer_id = ? AND referee_id = ?', (referred_by, user_id))
         referral_result = cursor.fetchone()
         
         if not referral_result or referral_result[0] == 0:
             referrer_instant_bonus = (amount * REFERRAL_BONUS_PERCENT) / 100
-            cursor.execute('UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?', 
-                         (referrer_instant_bonus, referred_by))
+            cursor.execute('UPDATE users SET bonus_balance = bonus_balance + ? WHERE user_id = ?', (referrer_instant_bonus, referred_by))
             
-            cursor.execute('UPDATE referrals SET instant_bonus_paid = 1 WHERE referrer_id = ? AND referee_id = ?', 
-                         (referred_by, user_id))
-        else:
-            referrer_instant_bonus = 0
+            cursor.execute('UPDATE referrals SET instant_bonus_paid = 1 WHERE referrer_id = ? AND referee_id = ?', (referred_by, user_id))
     
     conn.commit()
     
@@ -1482,20 +1348,6 @@ async def approve_recharge(query, context, req_id):
     except:
         pass
     
-    if referred_by and referrer_instant_bonus > 0:
-        try:
-            referrer_message = (
-                f"🎉 **META Income - রেফারেল বোনাস!**\n\n"
-                f"👤 আপনার রেফারেল: {user_phone}\n"
-                f"💰 রিচার্জ করেছে: {amount} টাকা\n"
-                f"🎁 আপনি পেয়েছেন: {referrer_instant_bonus} টাকা ইন্সট্যান্ট বোনাস!\n\n"
-                f"💡 এটি একবারের বোনাস, পরবর্তী রিচার্জে আর বোনাস পাবেন না\n"
-                f"💳 নতুন ব্যালেন্স চেক করতে /balance লিখুন"
-            )
-            await context.bot.send_message(chat_id=referred_by, text=referrer_message)
-        except:
-            pass
-    
     admin_message = (
         f"✅ **রিচার্জ Approved!**\n\n"
         f"👤 ইউজার: {user_phone}\n"
@@ -1505,10 +1357,8 @@ async def approve_recharge(query, context, req_id):
         f"🆔 রিকুয়েস্ট ID: {req_id}"
     )
     
-    if referred_by and referrer_phone and referrer_instant_bonus > 0:
+    if referred_by and referrer_phone:
         admin_message += f"\n👥 রেফারার: {referrer_phone}\n🎁 রেফারার বোনাস: {referrer_instant_bonus} টাকা (১ বার)"
-    elif referred_by:
-        admin_message += f"\n👥 রেফারার: {referrer_phone}\n🎁 রেফারার বোনাস: ইতিমধ্যে দেওয়া হয়েছে"
     
     admin_message += f"\n\n⏰ ইউজার প্রতিদিন {DELAYED_BONUS_PERCENT}% ডেইলি বোনাস পাবে"
     
@@ -1516,7 +1366,7 @@ async def approve_recharge(query, context, req_id):
 
 # Reject recharge
 async def reject_recharge(query, context, req_id):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT user_id, amount, payment_method, transaction_id FROM transactions WHERE id = ? AND status = "pending"', (req_id,))
@@ -1561,9 +1411,9 @@ async def reject_recharge(query, context, req_id):
         f"ইউজারকে নোটিফাই করা হয়েছে"
     )
 
-# Approve withdraw - AUTO DEDUCT FROM BONUS BALANCE
+# Approve withdraw
 async def approve_withdraw(query, context, w_id):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT user_id, amount, payment_method, account_number FROM withdrawals WHERE id = ? AND status = "pending"', (w_id,))
@@ -1576,7 +1426,6 @@ async def approve_withdraw(query, context, w_id):
     
     user_id, amount, payment_method, account_number = withdrawal
     
-    # Check user's bonus balance
     cursor.execute('SELECT bonus_balance FROM users WHERE user_id = ?', (user_id,))
     user_data = cursor.fetchone()
     
@@ -1586,10 +1435,8 @@ async def approve_withdraw(query, context, w_id):
         return
     
     try:
-        # Update withdrawal status to paid
         cursor.execute('UPDATE withdrawals SET status = "paid" WHERE id = ?', (w_id,))
         
-        # AUTO DEDUCT from user's bonus balance
         cursor.execute('UPDATE users SET bonus_balance = bonus_balance - ? WHERE user_id = ?', (amount, user_id))
         
         conn.commit()
@@ -1599,7 +1446,6 @@ async def approve_withdraw(query, context, w_id):
         
         method_name = "বিকাশ" if payment_method == "bkash" else "নগদ"
         
-        # Notify user
         try:
             await context.bot.send_message(
                 chat_id=user_id,
@@ -1613,7 +1459,7 @@ async def approve_withdraw(query, context, w_id):
                      f"ব্যালেন্স চেক করতে /balance লিখুন"
             )
         except Exception as e:
-            logging.error(f"Error notifying user: {e}")
+            logger.error(f"Error notifying user: {e}")
         
         await query.edit_message_text(
             f"✅ **উইথড্র Approved!**\n\n"
@@ -1627,14 +1473,14 @@ async def approve_withdraw(query, context, w_id):
         )
         
     except Exception as e:
-        logging.error(f"Error in approve_withdraw: {e}")
+        logger.error(f"Error in approve_withdraw: {e}")
         await query.edit_message_text("❌ ডাটাবেস এরর! আবার চেষ্টা করুন")
     finally:
         conn.close()
 
 # Reject withdraw
 async def reject_withdraw(query, context, w_id):
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('users.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT user_id, amount, payment_method, account_number FROM withdrawals WHERE id = ? AND status = "pending"', (w_id,))
@@ -1711,7 +1557,6 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel)]
     )
     
-    # withdraw conversation handler
     withdraw_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(handle_payment_method, pattern="^method_")],
         states={
@@ -1751,6 +1596,7 @@ def main():
     print("🔐 পাসওয়ার্ড সিস্টেম সক্রিয়")
     print("🔗 প্রতিটি ইউজারের জন্য র‍্যান্ডম রেফারেল লিংক তৈরি হবে")
     print("🎁 রেফারেল রিচার্জে 20% ইন্সট্যান্ট বোনাস")
+    
     application.run_polling()
 
 if __name__ == "__main__":
